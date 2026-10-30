@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from supabase import create_client
@@ -6,18 +7,12 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 
-# ---------------- PAGE SETTINGS ----------------
-
-st.set_page_config(
-    page_title="HeartCare",
-    page_icon="❤️",
-    layout="wide"
-)
+st.set_page_config(page_title="HeartCare", page_icon="❤️", layout="wide")
 
 st.title("❤️ HeartCare")
 st.caption("Heart Disease Prediction and Patient Management System")
 
-# ---------------- SUPABASE CONNECTION ----------------
+# SUPABASE CONNECTION
 
 @st.cache_resource
 def get_supabase():
@@ -26,19 +21,22 @@ def get_supabase():
         st.secrets["SUPABASE_KEY"]
     )
 
-supabase = get_supabase()
+try:
+    supabase = get_supabase()
+except Exception as e:
+    st.error(f"Database connection error: {e}")
+    st.stop()
 
-# ---------------- STAFF LOGIN ----------------
+# STAFF LOGIN
 
 if "access_token" not in st.session_state:
     st.session_state.access_token = None
     st.session_state.refresh_token = None
 
 if not st.session_state.access_token:
-
     st.subheader("Staff Login")
 
-    with st.form("login_form"):
+    with st.form("login"):
         email = st.text_input("Staff Email")
         password = st.text_input("Password", type="password")
         login = st.form_submit_button("Login")
@@ -52,7 +50,6 @@ if not st.session_state.access_token:
 
             st.session_state.access_token = response.session.access_token
             st.session_state.refresh_token = response.session.refresh_token
-
             st.rerun()
 
         except Exception:
@@ -60,7 +57,8 @@ if not st.session_state.access_token:
 
     st.stop()
 
-# Restore the signed-in session
+# RESTORE LOGIN SESSION
+
 try:
     supabase.auth.set_session(
         st.session_state.access_token,
@@ -69,7 +67,7 @@ try:
 except Exception:
     st.session_state.access_token = None
     st.session_state.refresh_token = None
-    st.error("Your login session has expired. Please log in again.")
+    st.error("Session expired. Please log in again.")
     st.rerun()
 
 if st.sidebar.button("Logout"):
@@ -78,7 +76,7 @@ if st.sidebar.button("Logout"):
     st.session_state.refresh_token = None
     st.rerun()
 
-# ---------------- TRAIN PREDICTION MODEL ----------------
+# MACHINE LEARNING MODEL
 
 FEATURES = [
     "age", "sex", "cp", "trestbps", "chol", "fbs",
@@ -88,27 +86,25 @@ FEATURES = [
 
 @st.cache_resource
 def train_model():
-
     data = pd.read_csv("heart-disease-data.csv")
-
     data.columns = data.columns.str.strip().str.lower()
     data = data.replace("?", pd.NA)
 
-    target_column = "target" if "target" in data.columns else "num"
+    target = "target" if "target" in data.columns else "num"
 
-    if target_column not in data.columns:
-        raise ValueError("The dataset must contain target or num column.")
+    if target not in data.columns:
+        raise ValueError("Dataset needs a target or num column.")
 
-    for column in FEATURES + [target_column]:
+    for column in FEATURES + [target]:
         data[column] = pd.to_numeric(data[column], errors="coerce")
 
-    data = data.dropna(subset=[target_column])
+    data = data.dropna(subset=[target])
 
     X = data[FEATURES]
-    y = (data[target_column] > 0).astype(int)
+    y = (data[target] > 0).astype(int)
 
     if y.nunique() < 2:
-        raise ValueError("The dataset must contain both target classes.")
+        raise ValueError("Dataset must contain both outcome classes.")
 
     model = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
@@ -117,79 +113,49 @@ def train_model():
     ])
 
     model.fit(X, y)
-
     return model
 
 try:
     model = train_model()
-except Exception as error:
-    st.error(f"Model could not be loaded: {error}")
+except Exception as e:
+    st.error(f"Model loading error: {e}")
     st.stop()
 
-# ---------------- PATIENT FORM ----------------
+# PATIENT DETAILS
 
 st.subheader("Patient Information")
 
 with st.form("patient_form"):
-
     col1, col2 = st.columns(2)
 
     with col1:
         patient_id = st.text_input("Patient ID")
         patient_name = st.text_input("Patient Name")
-        age = st.number_input("Age", min_value=1, max_value=120, value=30)
+        age = st.number_input("Age", 1, 120, 30)
 
         sex_label = st.selectbox("Sex", ["Male", "Female"])
         sex = 1 if sex_label == "Male" else 0
 
-        cp = st.selectbox(
-            "Chest Pain Type",
-            [0, 1, 2, 3],
-            format_func=lambda x: {
-                0: "Typical Angina",
-                1: "Atypical Angina",
-                2: "Non-anginal Pain",
-                3: "Asymptomatic"
-            }[x]
-        )
-
-        trestbps = st.number_input(
-            "Resting Blood Pressure (mm Hg)",
-            min_value=50, max_value=250, value=120
-        )
-
-        chol = st.number_input(
-            "Serum Cholesterol (mg/dl)",
-            min_value=50, max_value=700, value=200
-        )
+        cp = st.selectbox("Chest Pain Type", [0, 1, 2, 3])
+        trestbps = st.number_input("Resting Blood Pressure", 50, 250, 120)
+        chol = st.number_input("Cholesterol", 50, 700, 200)
 
         fbs_value = st.number_input(
-            "Fasting Blood Sugar (mg/dl)",
-            min_value=30, max_value=500, value=100
+            "Fasting Blood Sugar (mg/dl)", 30, 500, 100
         )
-
         fbs = 1 if fbs_value > 120 else 0
 
     with col2:
-
         restecg = st.selectbox("Resting ECG", [0, 1, 2])
-
-        thalach = st.number_input(
-            "Maximum Heart Rate",
-            min_value=40, max_value=250, value=150
-        )
+        thalach = st.number_input("Maximum Heart Rate", 40, 250, 150)
 
         exang_label = st.selectbox(
-            "Exercise Induced Angina",
-            ["No", "Yes"]
+            "Exercise Induced Angina", ["No", "Yes"]
         )
-
         exang = 1 if exang_label == "Yes" else 0
 
         oldpeak = st.number_input(
-            "ST Depression (Oldpeak)",
-            min_value=0.0, max_value=10.0,
-            value=1.0, step=0.1
+            "ST Depression (Oldpeak)", 0.0, 10.0, 1.0, step=0.1
         )
 
         slope = st.selectbox("ST Slope", [0, 1, 2])
@@ -198,15 +164,12 @@ with st.form("patient_form"):
 
     submitted = st.form_submit_button("Predict Heart Disease")
 
-# ---------------- PREDICTION AND DATABASE SAVE ----------------
+# PREDICTION AND SAVE
 
 if submitted:
-
     if not patient_id.strip() or not patient_name.strip():
-        st.error("Please enter Patient ID and Patient Name.")
-
+        st.error("Enter Patient ID and Patient Name.")
     else:
-
         input_data = pd.DataFrame([{
             "age": age,
             "sex": sex,
@@ -226,18 +189,20 @@ if submitted:
         prediction = int(model.predict(input_data)[0])
         probability = float(model.predict_proba(input_data)[0][1]) * 100
 
+        result = (
+            "Positive model prediction"
+            if prediction == 1
+            else "Negative model prediction"
+        )
+
         if prediction == 1:
-            result = "Positive model prediction"
             st.warning("The model predicts a possible presence of heart disease.")
         else:
-            result = "Negative model prediction"
             st.success("The model predicts no heart disease.")
 
-        st.metric("Model positive probability", f"{probability:.2f}%")
+        st.metric("Model Positive Probability", f"{probability:.2f}%")
 
-        # Save patient and visit in Supabase
         try:
-
             supabase.table("patients").upsert({
                 "patient_id": patient_id.strip(),
                 "patient_name": patient_name.strip(),
@@ -264,24 +229,21 @@ if submitted:
 
             st.success("Patient visit saved successfully!")
 
-        except Exception as error:
-            st.error(f"Could not save patient record: {error}")
+        except Exception as e:
+            st.error(f"Could not save patient: {e}")
 
-# ---------------- PATIENT HISTORY SEARCH ----------------
+# SEARCH PATIENT HISTORY
 
 st.divider()
-st.subheader("🔍 Search Patient History")
+st.subheader("🔍 Patient Previous History")
 
-search_id = st.text_input("Enter Patient ID to view previous visits")
+search_id = st.text_input("Enter Patient ID to search")
 
 if st.button("Search Patient"):
-
     if not search_id.strip():
-        st.warning("Please enter a Patient ID.")
-
+        st.warning("Enter a Patient ID.")
     else:
         try:
-
             patient_response = (
                 supabase.table("patients")
                 .select("*")
@@ -290,15 +252,14 @@ if st.button("Search Patient"):
             )
 
             if not patient_response.data:
-                st.warning("No patient found with this ID.")
-
+                st.warning("Patient not found.")
             else:
                 patient = patient_response.data[0]
 
                 st.write("### Patient Details")
-                st.write("**Patient ID:**", patient["patient_id"])
-                st.write("**Patient Name:**", patient["patient_name"])
-                st.write("**Sex:**", patient["sex"])
+                st.write("Patient ID:", patient["patient_id"])
+                st.write("Patient Name:", patient["patient_name"])
+                st.write("Sex:", patient["sex"])
 
                 visits_response = (
                     supabase.table("visits")
@@ -308,22 +269,20 @@ if st.button("Search Patient"):
                     .execute()
                 )
 
-                st.write("### Previous Visit History")
+                st.write("### Previous Visits")
 
                 if visits_response.data:
-                    history = pd.DataFrame(visits_response.data)
-                    st.dataframe(history, use_container_width=True)
+                    st.dataframe(
+                        pd.DataFrame(visits_response.data),
+                        use_container_width=True
+                    )
                 else:
                     st.info("No previous visits found.")
 
-        except Exception as error:
-            st.error(f"Could not retrieve patient history: {error}")
-
-# ---------------- DISCLAIMER ----------------
+        except Exception as e:
+            st.error(f"History search failed: {e}")
 
 st.divider()
-
 st.caption(
-    "Academic demonstration only. This model is not a medical diagnosis "
-    "or a substitute for professional medical advice."
+    "Academic demonstration only. This prediction is not a medical diagnosis."
 )
